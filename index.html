@@ -139,7 +139,7 @@ const ASSETS={mono:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAAEECAYAAA
 const INVOICE_CSS="@page{size:A4;margin:12mm 12mm 14mm}\n.inv *{box-sizing:border-box}\n.inv{margin:0;font-family:Tajawal,sans-serif;color:#141414;font-size:10.5pt;line-height:1.45}\n.inv .gold{color:#A88434}\n.inv .head{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #141414;padding-bottom:10px}\n.inv .brand{display:flex;align-items:center;gap:10px}\n.inv .brand img{height:58px}\n.inv .brand .name{font-family:Cormorant,serif;font-size:22pt;font-weight:700;letter-spacing:2px;line-height:1}\n.inv .brand .slogan{font-size:9.5pt;color:#555}\n.inv .doc{text-align:left}\n.inv .doc .t{font-size:20pt;font-weight:800}\n.inv .doc .t small{font-size:10pt;font-weight:400;color:#555;margin-right:6px}\n.inv .meta{font-size:9.5pt;color:#333}\n.inv .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}\n.inv .box{border:1px solid #D8D2C4;border-radius:8px;padding:9px 11px}\n.inv .box h3{margin:0 0 6px;font-size:10.5pt;font-weight:800;color:#A88434}\n.inv .r{display:flex;gap:6px;font-size:9.8pt}\n.inv .r b{min-width:78px;color:#555;font-weight:700}\n.inv table{width:100%;border-collapse:collapse;margin-top:12px;font-size:10pt}\n.inv th{background:#141414;color:#F6F0E4;font-weight:700;padding:7px 6px;text-align:right}\n.inv td{padding:7px 6px;border-bottom:1px solid #E6E0D2}\n.inv td.n,.inv th.n{text-align:center;white-space:nowrap}\n.inv tr.gift td{color:#7A6A40;font-style:italic}\n.inv .totals{display:grid;grid-template-columns:1.25fr 1fr;gap:12px;margin-top:12px;align-items:start}\n.inv .sum{border:1px solid #D8D2C4;border-radius:8px;overflow:hidden}\n.inv .sum .l{display:flex;justify-content:space-between;padding:6px 11px;border-bottom:1px solid #EEE8DA}\n.inv .sum .l.tot{background:#F6F0E4;font-weight:800;font-size:11.5pt}\n.inv .sum .l.due{background:#141414;color:#F6F0E4;font-weight:800;font-size:11.5pt;white-space:nowrap}\n.inv .pay{font-size:9.3pt;color:#444;margin-top:4px}\n.inv .ref{border:1.5px dashed #A88434;border-radius:8px;padding:10px 11px;display:flex;gap:10px;align-items:center}\n.inv .ref img{width:74px;height:74px}\n.inv .ref .code{font-size:17pt;font-weight:800;letter-spacing:1px;direction:ltr;display:inline-block}\n.inv .small{font-size:8.8pt;color:#555}\n.inv .foot{margin-top:14px;border-top:1px solid #D8D2C4;padding-top:8px;display:flex;justify-content:space-between;font-size:9pt;color:#444}\n.inv .ltr{direction:ltr;unicode-bidi:embed;display:inline-block}\n.inv .note{margin-top:10px;font-size:9.3pt;background:#FBF8F1;border-radius:6px;padding:7px 10px}\n.inv{background:#fff;color:#141414;direction:rtl}";
 /* KandApp core — storage, data, IDs, sync, router, domain calculations */
 'use strict';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => s == null ? '' : String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = v => { const n = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(',', '.')); return isNaN(n) ? null : n; };
@@ -153,6 +153,9 @@ const ymd = (d = new Date()) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + 
 const addDays = (s, k) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + k); return ymd(d); };
 const dmy = s => s ? String(s).slice(0, 10).split('-').reverse().join('-') : '';
 const norm = s => String(s || '').toLowerCase().replace(/[أإآا]/g, 'ا').replace(/[ىي]/g, 'ي').replace(/ة/g, 'ه').replace(/[ً-ْ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+/** Google Sheets turns 01001234567 into the number 1001234567 — put the 0 back */
+const fixPhone = v => { if (v == null || v === '') return v; let s = String(v).trim(); if (/^\d+(\.0+)?$/.test(s)) s = s.replace(/\.0+$/, ''); if (/^1\d{9}$/.test(s)) s = '0' + s; return s; };
+const digits = v => String(v ?? '').replace(/\D/g, '').replace(/^0+/, '');
 const VALID = r => r && (r.Record_Status === 'Valid' || r.Record_Status === 'Edited');
 const ACTIVE = r => r && (r.Status == null || r.Status === 'Active');
 
@@ -172,6 +175,7 @@ const KV = {
 };
 
 /* ---------------- state ---------------- */
+const ORDER_START = { W1: 1, W2: 501, W3: 251, W4: 751 };   // 4 devices × 249 orders/day each: W1 001–249 · W3 251–499 · W2 501–749 · W4 751–999
 const S = {
   raw: null,          // {version, tables:{name:{h,r}}}
   T: {},              // tables as arrays of objects
@@ -186,6 +190,7 @@ function buildT() {
   for (const [name, t] of Object.entries(S.raw.tables)) {
     S.H[name] = t.h;
     S.T[name] = t.r.map(r => { const o = {}; t.h.forEach((k, i) => o[k] = r[i] ?? null); return o; });
+    if (name === 'Customers' || name === 'Orders') for (const o of S.T[name]) { o.Phone = fixPhone(o.Phone); o.WhatsApp = fixPhone(o.WhatsApp); }
   }
   IDX.reset();
 }
@@ -232,7 +237,7 @@ function orderCodePrefix(date = ymd()) {
   return date.slice(2, 4) + ml + date.slice(8, 10) + wl;
 }
 function newOrderCode(date = ymd()) {
-  const pre = orderCodePrefix(date) + '-', st = +S.cfg.orderStart || 1, end = st + 498;
+  const pre = orderCodePrefix(date) + '-', st = ORDER_START[S.cfg.device] || +S.cfg.orderStart || 1, end = st + 248;
   let mx = st - 1;
   for (const r of T('Orders')) { const c = String(r.Order_Code || ''); if (c.startsWith(pre)) { const n = parseInt(c.slice(pre.length)); if (n >= st && n <= end) mx = Math.max(mx, n); } }
   return pre + pad(mx + 1, 3);
@@ -467,6 +472,19 @@ const K = {
     const pack = K.glass(v) + (C('Label_Price') || 0) + (C('Logo_Price') || 0);
     return liquid + pack * (1 + (C('Pack_Waste') ?? 0.04)) + (C('Consumables_Fixed') || 0) + (C('Consumables_per_ml') || 0) * v;
   },
+  /** stage-1 cost when the liquid cost per ml is already known (filling from a macerated mix) */
+  unitCostLiquid(v, perMl) {
+    const pack = K.glass(v) + (C('Label_Price') || 0) + (C('Logo_Price') || 0);
+    return perMl * v * (1 + (C('Liquid_Waste') ?? 0.1)) + pack * (1 + (C('Pack_Waste') ?? 0.04)) + (C('Consumables_Fixed') || 0) + (C('Consumables_per_ml') || 0) * v;
+  },
+  /** macerating / ready mixes in stock: MIX-<Batch_ID> */
+  mixes(onlyStock = true) {
+    return T('Batch_Outputs').filter(o => VALID(o) && String(o.SKU).startsWith('MIX-')).map(o => {
+      const b = get('Production_Batches', 'Batch_ID', o.Batch_ID) || {};
+      return { code: o.SKU, batch: b, fid: b.Fragrance_ID, conc: num(b.Concentration), made: num(o.Qty), perMl: num(o.Unit_Cost_Stage1) || 0, ready: b.Ready_Date, left: K.stock(o.SKU) };
+    }).filter(m => !onlyStock || m.left > 0.01);
+  },
+  mixName(code) { const m = K.mixes(false).find(x => x.code === code); return m ? 'خلطة ' + K.fname(m.fid) + ' ' + Math.round((m.conc || 0) * 100) + '% (' + dmy(m.batch.Date) + ')' : code; },
   marginColor(m) { return m < (C('Margin_Red_Below') ?? 0.15) ? 'var(--red)' : (m < (C('Margin_Green_Above') ?? 0.2) ? 'var(--org)' : 'var(--grn)'); },
   /** best price per gram for costing a fragrance: last purchase, else list average */
   costPrice(fid) { const b = K.lastBuy(fid); if (b && num(b.Price_per_unit)) return num(b.Price_per_unit); const s = K.stats(fid); return s ? s.avg : 0; },
@@ -484,6 +502,7 @@ const K = {
   },
   stockName(code, type) {
     if (code.startsWith('OIL-')) return 'زيت ' + K.fname(code.slice(4));
+    if (code.startsWith('MIX-')) return K.mixName(code);
     const p = K.product(code); if (p) return p.Product_Name_AR || code;
     return K.itemName(code);
   },
@@ -625,7 +644,7 @@ const calc = SCREENS.calc = {
     }).join('');
     $('#calc_tbl').innerHTML = `<div class="tbl"><div class="tr h"><span>الحجم</span><span>مستهلك</span><span>نص جملة</span><span>جملة</span><span>زيت جم</span><span>التكلفة</span><span>الكمية</span></div>${rows}
       ${any ? `<div class="tr tot"><span>الإجمالي</span><span>${r0(tot.c)}</span><span>${r0(tot.h)}</span><span>${r0(tot.w)}</span><span>${r2(tot.oil)}</span><span>${r2(tot.cost)}</span><span>${tot.q} قطعة</span></div>` : ''}</div>`;
-    const need = tot.oil * (1 + (C('Liquid_Waste') ?? .1)), packs = [10, 30, 50, 100, 250, 500, 1000];
+    const need = tot.oil * (1 + (C('Liquid_Waste') ?? .1)), packs = [10, 30, 50, 100, 125, 250, 500, 1000];
     const pk = packs.find(x => x >= need) || Math.ceil(need), bg = num(this.buy);
     $('#calc_sum').innerHTML = `<div class="gold" style="font-weight:800">${any ? 'ملخص الكميات المدخلة' : 'الملخص (دخّل كمية جنب أي حجم)'}</div>
       <div class="grid3"><div><div class="mut sm">زيت</div><b>${r2(any ? tot.oil : 0)} جم</b></div><div><div class="mut sm">كحول</div><b>${r2(any ? tot.alc : 0)} مل</b></div><div><div class="mut sm">سعر الزيت</div><b>${r2(any ? tot.oil * p : 0)} ج</b></div></div>
@@ -676,7 +695,7 @@ const rec = SCREENS.record = {
         ${field('الكود', `<input value="${esc(this.code)}" placeholder="اختياري" oninput="rec.code=this.value;rec.paint()">`)}
         ${field(buy ? 'الكمية المشتراة (جم)' : 'السعر على كمية (جم)', `<input type="number" inputmode="decimal" value="${esc(this.qty)}" placeholder="30" oninput="rec.qty=this.value;rec.paint()">`, buy)}
       </div>
-      <div class="chips">${[10, 30, 50, 100, 250, 500, 1000].map(g => chip(+this.qty === g, g + ' جم', `rec.qty=${g};Router.render(true)`)).join('')}</div>
+      <div class="chips">${[10, 30, 50, 100, 125, 250, 500, 1000].map(g => chip(+this.qty === g, g + ' جم', `rec.qty=${g};Router.render(true)`)).join('')}</div>
       ${buy ? `<div class="grid2">
         ${field('طريقة الدفع', `<select onchange="rec.pay=this.value">${T('Payment_Methods').filter(ACTIVE).map(m => opt(m.Method, m.Method_AR, this.pay)).join('')}</select>`)}
         ${field('المدفوع (ج)', `<input type="number" inputmode="decimal" value="${esc(this.paid)}" placeholder="= الإجمالي" oninput="rec.paid=this.value">`)}
@@ -919,8 +938,10 @@ const ord = SCREENS.order = {
   paintCust() {
     const el = $('#ord_cl'); if (!el) return; const n = norm(this.cq);
     if (!n) { el.innerHTML = ''; return; }
-    const xs = T('Customers').filter(c => c.Status !== 'Inactive' && norm(c.Name + ' ' + c.Phone + ' ' + c.WhatsApp).includes(n)).slice(0, 8);
-    el.innerHTML = `<div class="list">${xs.map(c => `<button class="li" onclick="ord.cid='${c.Customer_ID}';ord.newCust=false;ord.reprice()"><b>${esc(c.Name)}</b><span class="ltr">${esc(c.Phone || '')}</span></button>`).join('') || '<div class="li mut">مش موجود — كمّل كعميل جديد</div>'}</div>`;
+    const d = digits(this.cq);
+    const xs = T('Customers').filter(c => norm([c.Name, c.Own_Referral_Code, c.City_Area].join(' ')).includes(n) || (d.length >= 3 && (digits(c.Phone).includes(d) || digits(c.WhatsApp).includes(d))))
+      .sort((a, b) => (a.Status === 'Inactive') - (b.Status === 'Inactive')).slice(0, 10);
+    el.innerHTML = `<div class="list">${xs.map(c => `<button class="li" onclick="ord.cid='${c.Customer_ID}';ord.newCust=false;ord.reprice()"><b>${esc(c.Name)}${c.Status === 'Inactive' ? ' <span class="badge m">موقوف</span>' : ''}</b><span class="ltr">${esc(c.Phone || '')}</span></button>`).join('') || '<div class="li mut">مش موجود — كمّل كعميل جديد</div>'}</div>`;
   },
   paintTot() {
     const t = this.totals(), el = $('#ord_tot'), ri = this.refInfo(); if (!el) return;
@@ -939,7 +960,7 @@ const ord = SCREENS.order = {
     let c = this.cust();
     if (this.newCust || !c) {
       if (!this.c.Name.trim() || !this.c.Phone.trim()) return toast('اكتب اسم العميل والموبايل');
-      const dup = T('Customers').find(x => x.Phone && String(x.Phone).replace(/\D/g, '') === this.c.Phone.replace(/\D/g, ''));
+      const dup = T('Customers').find(x => x.Phone && digits(x.Phone) === digits(this.c.Phone));
       if (dup) { if (!(await ask('الموبايل ده مسجل باسم ' + dup.Name + ' — أستخدم نفس العميل؟'))) return; c = dup; }
       else c = add('Customers', Object.assign({ Customer_ID: newId('C', 'Customers'), WhatsApp: this.c.WhatsApp || this.c.Phone, Status: 'Active' }, this.c, { WhatsApp: this.c.WhatsApp || this.c.Phone }));
     }
@@ -956,7 +977,11 @@ const ord = SCREENS.order = {
     });
     for (const l of this.lines) {
       let cost = null;
-      if (l.fid) { const pr = K.product(l.code); cost = Math.round(K.unitCost(l.size, K.costPrice(l.fid), num(pr && pr.Concentration) || K.conc(l.fid).c) * 100) / 100; }
+      if (l.fid) {
+        const bo = T('Batch_Outputs').filter(o => o.SKU === l.code && VALID(o) && num(o.Unit_Cost_Stage1)).sort((a, b) => String(a.Output_ID).localeCompare(String(b.Output_ID))).pop();
+        const pr = K.product(l.code);
+        cost = bo ? num(bo.Unit_Cost_Stage1) : Math.round(K.unitCost(l.size, K.costPrice(l.fid), num(pr && pr.Concentration) || K.conc(l.fid).c) * 100) / 100;
+      }
       if (l.fid && !K.product(l.code)) add('Products', { SKU: l.code, Fragrance_ID: l.fid, Size_ml: l.size, Product_Name_AR: K.fname(l.fid) + ' ' + l.size + ' مل', Glass_Item_ID: (get('Size_Defaults', 'Size_ml', l.size) || {}).Default_Glass_Item_ID, Concentration: null, Stage: 'Testing', Status: 'Active', Notes: 'Created from order ' + code });
       add('Order_Lines', { Line_ID: newId('OL', 'Order_Lines', date), Order_ID: oid, Line_Type: l.type, SKU_or_Kit: l.code, Description: l.desc, Size_ml: l.size, Qty: l.qty, Unit_Price: l.price, Line_Discount: 0, Points_Earned: null, Line_Total: Math.round(l.qty * l.price * 100) / 100, Unit_Cost_Stage1: cost, Record_Status: 'Valid' });
     }
@@ -1176,7 +1201,7 @@ const Cust = SCREENS.customers = {
   after() { if (!this.id && !this.edit) this.paint(); },
   paint() {
     const n = norm(this.q), el = $('#cust_list'); if (!el) return;
-    const xs = T('Customers').filter(c => !n || norm([c.Name, c.Phone, c.WhatsApp, c.Own_Referral_Code].join(' ')).includes(n)).slice(0, 80);
+    const d = digits(this.q); const xs = T('Customers').filter(c => !n || norm([c.Name, c.Own_Referral_Code, c.City_Area].join(' ')).includes(n) || (d.length >= 3 && (digits(c.Phone).includes(d) || digits(c.WhatsApp).includes(d)))).slice(0, 80);
     el.innerHTML = xs.map(c => `<button class="li card" style="margin-bottom:6px" onclick="Router.go('customers',{id:'${c.Customer_ID}'})"><b>${esc(c.Name)}</b><span><span class="ltr">${esc(c.Phone || '')}</span><br>${esc(c.Governorate || '')} · ${r0(K.points(c.Customer_ID))} نقطة</span></button>`).join('') || '<div class="empty">مفيش عملاء</div>';
   },
   form() {
@@ -1220,7 +1245,7 @@ const stockUnit = (it, unit) => unit === 'dozen' ? 'piece' : unit;
 /* ================= 5. Other purchase ================= */
 const pur = SCREENS.purchase = {
   title: 'شراء مستلزمات', sub: () => 'زجاج · كحول · ليبل · تغليف · شحن · أدوات',
-  init() { Object.assign(this, { cat: 'Glass', item: '', sup: '', qty: '', unit: '', ppu: '', price: '', pay: 'Cash', paid: '', notes: '', date: ymd() }); },
+  init() { Object.assign(this, { cat: 'Glass', item: '', sup: '', qty: '', unit: '', ppu: '', price: '', total: '', pay: 'Cash', paid: '', notes: '', date: ymd() }); },
   render() {
     const cats = [...new Set(T('Items').filter(ACTIVE).map(i => i.Category))];
     const items = T('Items').filter(i => ACTIVE(i) && i.Category === this.cat);
@@ -1231,17 +1256,27 @@ const pur = SCREENS.purchase = {
     <div class="card">${field('الصنف', `<select onchange="pur.setItem(this.value)"><option value="">اختار…</option>${items.map(i => opt(i.Item_ID, i.Name_AR, this.item)).join('')}</select>`, true)}
       ${it ? `<div class="mut sm">${esc(it.Item_ID)} · الوحدة ${esc(it.Unit)}${num(it.Pieces_per_Unit) > 1 ? ' (' + it.Pieces_per_Unit + ' قطعة)' : ''} · مخزون ${r2(K.stock(it.Item_ID))} · السعر الحالي ${cur != null ? r2(cur) : '—'}</div>` : ''}
       <div class="lbl">المورد</div><div class="chips">${sups.map(s => chip(this.sup === s, esc(s), `pur.sup=pur.sup===${qa(s)}?'':${qa(s)};Router.render(true)`)).join('')}</div>
-      <div class="grid3">${field('الكمية', `<input type="number" inputmode="decimal" value="${esc(this.qty)}" oninput="pur.qty=this.value;pur.paint()">`, true)}
+      <div class="grid2">${field('الكمية', `<input type="number" inputmode="decimal" value="${esc(this.qty)}" oninput="pur.qty=this.value;pur.calc('q')">`, true)}
         ${field('الوحدة', `<select onchange="pur.unit=this.value;pur.paint()">${['piece', 'dozen', 'sheet', 'L', 'roll', 'kg', 'g'].map(u => opt(u, { piece: 'قطعة', dozen: 'دستة', sheet: 'شيت', L: 'لتر', roll: 'رول', kg: 'كيلو', g: 'جرام' }[u], this.unit)).join('')}</select>`)}
-        ${field('سعر الوحدة', `<input type="number" inputmode="decimal" value="${esc(this.price)}" oninput="pur.price=this.value;pur.paint()">`, true)}</div>
+        ${field('سعر الوحدة', `<input id="pur_price" type="number" inputmode="decimal" value="${esc(this.price)}" oninput="pur.price=this.value;pur.calc('p')">`, true)}
+        ${field('الإجمالي', `<input id="pur_total" type="number" inputmode="decimal" value="${esc(this.total)}" placeholder="بيتحسب لوحده" oninput="pur.total=this.value;pur.calc('t')">`)}</div>
+      <div class="mut sm">اكتب سعر الوحدة والإجمالي يتحسب، أو اكتب الإجمالي وسعر الوحدة يتحسب.</div>
       <div class="grid3">${field('طريقة الدفع', `<select onchange="pur.pay=this.value">${T('Payment_Methods').filter(ACTIVE).map(m => opt(m.Method, m.Method_AR, this.pay)).join('')}</select>`)}
-        ${field('المدفوع', `<input type="number" inputmode="decimal" value="${esc(this.paid)}" placeholder="= الإجمالي" oninput="pur.paid=this.value">`)}
+        ${field('المدفوع', `<input id="pur_paid" type="number" inputmode="decimal" value="${esc(this.paid)}" placeholder="${esc(this.total || '= الإجمالي')}" oninput="pur.paid=this.value">`)}
         ${field('التاريخ', `<input type="date" value="${this.date}" onchange="pur.date=this.value">`)}</div>
       ${field('ملاحظات', `<input value="${esc(this.notes)}" oninput="pur.notes=this.value">`)}
       <div id="pur_tot" class="gold" style="font-weight:800"></div></div>
     <button class="btn" onclick="pur.save()">حفظ الشراء</button>`;
   },
   after() { this.paint(); },
+  calc(src) {
+    const q = num(this.qty), p = num(this.price), t = num(this.total);
+    if ((src === 'q' || src === 'p') && q > 0 && p != null) { this.total = String(Math.round(q * p * 100) / 100); const e = $('#pur_total'); if (e) e.value = this.total; }
+    else if (src === 't' && q > 0 && t != null) { this.price = String(Math.round(t / q * 10000) / 10000); const e = $('#pur_price'); if (e) e.value = this.price; }
+    else if (src === 'q' && q > 0 && t != null && p == null) { this.price = String(Math.round(t / q * 10000) / 10000); const e = $('#pur_price'); if (e) e.value = this.price; }
+    const pd = $('#pur_paid'); if (pd) pd.placeholder = this.total || '= الإجمالي';
+    this.paint();
+  },
   setItem(id) { this.item = id; const it = K.item(id); if (it) { this.unit = it.Unit || 'piece'; if (!this.sup && it.Default_Supplier && it.Default_Supplier !== 'غير مسجل') this.sup = it.Default_Supplier; } Router.render(true); },
   paint() {
     const it = K.item(this.item), q = num(this.qty), p = num(this.price), el = $('#pur_tot'); if (!el) return;
@@ -1253,7 +1288,7 @@ const pur = SCREENS.purchase = {
     const it = K.item(this.item), q = num(this.qty), p = num(this.price);
     if (!it || !(q > 0) || !(p >= 0) || this.price === '') return toast('اختار الصنف واكتب الكمية والسعر');
     const date = this.date, id = newId('XP', 'Other_Purchases', date), ppu = this.unit === 'dozen' ? (num(it.Pieces_per_Unit) || 12) : 1;
-    const ppp = p / ppu, tot = Math.round(q * p * 100) / 100;
+    const ppp = p / ppu, tot = num(this.total) ?? Math.round(q * p * 100) / 100;
     add('Other_Purchases', { Purchase_ID: id, Date: date, Item_Type: ITEM_TYPE[it.Category] || it.Category, Item_ID: it.Item_ID, Item: it.Name_AR, Supplier: this.sup || null, Qty: q, Unit: this.unit, Pieces_per_Unit: ppu, Unit_Price: p, Total: tot, Price_per_Piece: Math.round(ppp * 10000) / 10000, Record_Status: 'Valid', Notes: this.notes || null, Payment_Method: this.pay, Amount_Paid: num(this.paid) ?? tot });
     if (it.Stock_Tracked !== 'Not applicable') add('Stock_Movements', { Move_ID: newId('SM', 'Stock_Movements', date), Date: date, Stock_Code: it.Item_ID, Stock_Type: 'Item', Movement_Type: 'Purchase In', Qty: stockQty(it, q, this.unit), Unit: stockUnit(it, this.unit), Ref_Doc: id, Location: 'L01', Record_Status: 'Valid', Notes: it.Name_AR });
     // price list: new Active price if it changed (old one → Inactive)
@@ -1266,100 +1301,196 @@ const pur = SCREENS.purchase = {
   }
 };
 
-/* ================= 6. Production batch ================= */
+/* ================= 6. Production: (A) mix for maceration · (B) fill bottles ================= */
 const bat = SCREENS.batch = {
-  title: 'تشغيلة / تعبئة', sub: () => 'الزيت + الكحول + الزجاج → منتجات في المخزون',
-  init(p) { Object.assign(this, { fid: p.fid || null, q: '', open: !p.fid, lot: '', conc: '', plan: {}, oilAct: '', alcAct: '', waste: '', days: 14, logo: K.stock('PR-LOGO') > 0, notes: '', date: ymd() }); },
-  pick(fid) { this.fid = fid; this.q = ''; this.open = false; this.lot = ''; Router.render(true); },
-  c() { const v = num(this.conc); if (v > 0) return v / 100; const lot = get('Oil_Purchases', 'Purchase_ID', this.lot); if (lot && num(lot.Concentration)) return num(lot.Concentration); return K.conc(this.fid).c; },
-  calcs() {
-    const c = this.c(), { og, al } = K.mix(c); let ml = 0, pcs = 0; const need = {};
-    for (const [v, n] of Object.entries(this.plan)) { if (!(n > 0)) continue; ml += v * n; pcs += n; const g = (get('Size_Defaults', 'Size_ml', v) || {}).Default_Glass_Item_ID; if (g) need[g] = (need[g] || 0) + n; }
-    const oil = ml * og, alcMl = ml * al;
-    return { c, ml, pcs, oil, alcMl, alcG: alcMl * (C('Alcohol_Density') || 0.808), need };
+  title: 'تشغيلة / تعبئة', sub: () => bat.mode === 'mix' ? 'زيت مركز + كحول → خلطة بتتعتق في المخزون' : 'خلطة جاهزة أو زيت → عبوات في المخزون',
+  init(p) {
+    Object.assign(this, { mode: this.mode || 'mix', fid: p.fid || null, q: '', open: !p.fid, allF: false, lot: '', conc: '', ml: '', oilIn: '', plan: {}, src: 'mix', mix: '',
+      oilAct: '', alcAct: '', waste: '', days: 14, logo: K.stock('PR-LOGO') > 0, notes: '', date: ymd() });
   },
+  pick(fid) { this.fid = fid; this.q = ''; this.open = false; this.lot = ''; Router.render(true); },
+  /* fragrances that have oil in stock (the picker shows only these unless «كل العطور») */
+  oilList() { return K.stockAll().filter(s => s.code.startsWith('OIL-') && s.qty > 0.01).map(s => ({ fid: s.code.slice(4), g: s.qty })).sort((x, y) => K.fname(x.fid).localeCompare(K.fname(y.fid), 'ar')); },
+  oilPicker() {
+    const xs = this.oilList();
+    return `<div class="card"><b class="gold">اختار الزيت (اللي في المخزون بس)</b>
+      ${xs.length ? `<div class="list">${xs.map(x => `<button class="li" onclick="bat.pick('${x.fid}')"><b>${esc(K.fname(x.fid))}</b><span>${r2(x.g)} جم في المخزون</span></button>`).join('')}</div>` : '<div class="note warn sm">مفيش زيوت في المخزون — سجّل شراء زيت الأول</div>'}
+      <button class="chip" onclick="bat.allF=!bat.allF;Router.render(true)">${this.allF ? 'إخفاء' : 'عطر مش في القايمة؟'}</button>
+      ${this.allF ? Picker.html(this, 'bat') : ''}</div>`;
+  },
+  c() { const v = num(this.conc); if (v > 0) return v / 100; const lot = get('Oil_Purchases', 'Purchase_ID', this.lot); if (lot && num(lot.Concentration)) return num(lot.Concentration); return K.conc(this.fid).c; },
+  lotPrice() { const lot = get('Oil_Purchases', 'Purchase_ID', this.lot); return lot ? num(lot.Price_per_unit) : K.costPrice(this.fid); },
   render() {
+    const seg = `<div class="seg"><button class="${this.mode === 'mix' ? 'on' : ''}" onclick="bat.mode='mix';Router.render(true)">خلطة للتعتيق</button><button class="${this.mode === 'fill' ? 'on' : ''}" onclick="bat.mode='fill';Router.render(true)">تعبئة عبوات</button></div>`;
+    return seg + (this.mode === 'mix' ? this.rMix() : this.rFill());
+  },
+  /* ---------- A. mix ---------- */
+  rMix() {
     const f = this.fid && K.frag(this.fid);
-    if (!f) return Picker.html(this, 'bat');
+    if (!f) return `<div class="note info sm">بتخلط الزيت المركز مع الكحول بالتركيز اللي تختاره، والخلطة بتدخل المخزون كصنف لوحده (مثلاً «خلطة يارا 30% — 120 مل») لحد ما تعبّيها.</div>` + this.oilPicker();
     const lots = T('Oil_Purchases').filter(r => r.Fragrance_ID === this.fid && VALID(r));
-    return `<div class="card"><div class="row"><b class="big sp">${esc(f.Name_AR)}</b><button class="chip" onclick="bat.fid=null;bat.open=true;Router.render(true)">تغيير</button></div>
-      <div class="mut sm">مخزون الزيت: ${r2(K.stock('OIL-' + this.fid))} جم</div>
-      ${field('من أنهي شراء (اللوت)', `<select onchange="bat.lot=this.value;Router.render(true)"><option value="">—</option>${lots.map(l => opt(l.Purchase_ID, dmy(l.Date) + ' · ' + (l.Supplier || '—') + ' · ' + (l.House || '—') + ' · ' + r2(num(l.Price_per_unit)) + ' ج/جم', this.lot)).join('')}</select>`)}
-      <div class="grid2">${field('التركيز % (بالوزن)', `<input type="number" inputmode="decimal" value="${esc(this.conc)}" placeholder="${Math.round(this.c() * 100)}" oninput="bat.conc=this.value;bat.paint()">`)}
-      ${field('التاريخ', `<input type="date" value="${this.date}" onchange="bat.date=this.value">`)}</div></div>
+    return `<div class="card"><div class="row"><b class="big sp">${esc(f.Name_AR)}</b><button class="chip" onclick="bat.fid=null;Router.render(true)">تغيير</button></div>
+      <div class="kv"><span>الزيت في المخزون</span><b>${r2(K.stock('OIL-' + this.fid))} جم</b></div>
+      ${field('من أنهي شراء (اللوت)', `<select onchange="bat.lot=this.value;Router.render(true)"><option value="">آخر سعر</option>${lots.map(l => opt(l.Purchase_ID, dmy(l.Date) + ' · ' + (l.Supplier || '—') + ' · ' + (l.House || '—') + ' · ' + r2(num(l.Price_per_unit)) + ' ج/جم · ' + r0(num(l.Qty)) + ' جم', this.lot)).join('')}</select>`)}
+      <div class="grid2">${field('التركيز % (بالوزن)', `<input type="number" inputmode="decimal" value="${esc(this.conc)}" placeholder="${Math.round(this.c() * 100)}" oninput="bat.conc=this.value;bat.paintMix()">`)}
+      ${field('التاريخ', `<input type="date" value="${this.date}" onchange="bat.date=this.value">`)}</div>
+      <div class="grid2">${field('حجم الخلطة (مل)', `<input type="number" inputmode="decimal" value="${esc(this.ml)}" placeholder="مثلاً 120" oninput="bat.ml=this.value;bat.oilIn='';bat.paintMix()">`)}
+      ${field('أو: هستخدم كام جرام زيت', `<input type="number" inputmode="decimal" value="${esc(this.oilIn)}" placeholder="مثلاً 30" oninput="bat.oilIn=this.value;bat.ml='';bat.paintMix()">`)}</div>
+      <div class="chips">${chip(false, 'كل الزيت اللي في المخزون', `bat.oilIn='${r2(K.stock('OIL-' + this.fid))}';bat.ml='';Router.render(true)`)}</div></div>
+    <div class="card" id="bat_calc"></div>
+    <div class="card"><div class="grid3">${field('زيت فعلي جم', `<input type="number" inputmode="decimal" value="${esc(this.oilAct)}" oninput="bat.oilAct=this.value">`)}${field('كحول فعلي جم', `<input type="number" inputmode="decimal" value="${esc(this.alcAct)}" oninput="bat.alcAct=this.value">`)}${field('أيام التعتيق', `<input type="number" value="${this.days}" oninput="bat.days=this.value">`)}</div>
+      ${field('ملاحظات', `<input value="${esc(this.notes)}" oninput="bat.notes=this.value">`)}</div>
+    <button class="btn" onclick="bat.saveMix()">حفظ الخلطة</button>`;
+  },
+  mixCalc() {
+    const c = this.c(), { og, al } = K.mix(c);
+    let ml = num(this.ml); if (!(ml > 0) && num(this.oilIn) > 0) ml = num(this.oilIn) / og;
+    if (!(ml > 0)) return null;
+    const oil = ml * og, alcMl = ml * al, p = this.lotPrice(), ap = C('Alcohol_Price') || 160;
+    return { c, ml, oil, alcMl, alcG: alcMl * (C('Alcohol_Density') || .808), cost: oil * p + alcMl / 1000 * ap, p };
+  },
+  paintMix() {
+    const el = $('#bat_calc'); if (!el) return; const x = this.mixCalc();
+    if (!x) { el.innerHTML = '<div class="mut">اكتب حجم الخلطة أو كمية الزيت</div>'; return; }
+    const st = K.stock('OIL-' + this.fid), sa = K.stock('AL-ETH96') * 1000, okO = x.oil <= st + 0.001, okA = x.alcMl <= sa + 0.1;
+    el.innerHTML = `<div class="grid3"><div><div class="mut sm">الخلطة</div><b>${r0(x.ml)} مل · ${pct(x.c)}</b></div><div><div class="mut sm">زيت</div><b class="${okO ? '' : 'red'}">${r2(x.oil)} جم</b><div class="mut sm">من ${r2(st)}</div></div><div><div class="mut sm">كحول</div><b class="${okA ? '' : 'red'}">${r2(x.alcG)} جم = ${r0(x.alcMl)} مل</b><div class="mut sm">من ${r0(sa)} مل</div></div></div>
+      <div class="kv"><span>تكلفة الخلطة (زيت ${r2(x.p)} ج/جم + كحول)</span><b>${money(x.cost)} ج = ${r2(x.cost / x.ml)} ج/مل</b></div>
+      ${okO && okA ? '<div class="note ok sm">المخزون يكفي ✓</div>' : `<div class="note bad sm">${!okO ? 'الزيت اللي في المخزون مش كفاية. ' : ''}${!okA ? 'الكحول مش كفاية.' : ''}</div>`}`;
+  },
+  async saveMix() {
+    const f = K.frag(this.fid), x = this.mixCalc(); if (!f || !x) return toast('اختار الزيت والكمية');
+    if (x.oil > K.stock('OIL-' + this.fid) + 0.001 && !(await ask('الزيت المطلوب (' + r2(x.oil) + ' جم) أكتر من المخزون (' + r2(K.stock('OIL-' + this.fid)) + ' جم). أسجل برضه؟'))) return;
+    const date = this.date, id = newId('PB', 'Production_Batches', date), lot = get('Oil_Purchases', 'Purchase_ID', this.lot), code = 'MIX-' + id;
+    const oil = num(this.oilAct) ?? Math.round(x.oil * 100) / 100, alcG = num(this.alcAct) ?? Math.round(x.alcG * 100) / 100, ad = C('Alcohol_Density') || .808;
+    const ml = Math.round((oil / (C('Oil_Density') || .9414) + alcG / ad) * 10) / 10, cost = oil * x.p + alcG / ad / 1000 * (C('Alcohol_Price') || 160);
+    add('Production_Batches', { Batch_ID: id, Date: date, Fragrance_ID: this.fid, Oil_Lot_Purchase_ID: this.lot || null, House: lot ? lot.House : null, Concentration: Math.round(oil / (oil + alcG) * 10000) / 10000, Oil_g: oil, Alcohol_g: alcG, Alcohol_ml: Math.round(alcG / ad * 100) / 100, Mix_Total_g: oil + alcG,
+      Output_Plan: 'MIX ' + ml + ' ml', Pieces_Filled: 0, Waste_g: null, Maceration_Start: date, Ready_Date: addDays(date, num(this.days) || 0), QC_Status: 'Pending', Record_Status: 'Valid', Notes: this.notes || 'Mix for maceration' });
+    add('Batch_Outputs', { Output_ID: newId('BO', 'Batch_Outputs', date), Batch_ID: id, SKU: code, Qty: ml, Unit_Cost_Stage1: Math.round(cost / ml * 10000) / 10000, Record_Status: 'Valid' });
+    const mv = (c, type, mt, qty, unit, note) => add('Stock_Movements', { Move_ID: newId('SM', 'Stock_Movements', date), Date: date, Stock_Code: c, Stock_Type: type, Movement_Type: mt, Qty: Math.round(qty * 10000) / 10000, Unit: unit, Ref_Doc: id, Location: 'L02', Record_Status: 'Valid', Notes: note || null });
+    mv('OIL-' + this.fid, 'Oil', 'Production Out', -oil, 'g', f.Name_EN);
+    mv('AL-ETH96', 'Item', 'Production Out', -(alcG / ad) / 1000, 'L');
+    mv(code, 'Mix', 'Production In', ml, 'ml', f.Name_EN + ' ' + Math.round(oil / (oil + alcG) * 100) + '%');
+    await commit('اتسجلت الخلطة ✓ — ' + ml + ' مل، جاهزة ' + dmy(addDays(date, num(this.days) || 0)));
+    this.init({}); this.mode = 'fill'; Router.render(true);
+  },
+  /* ---------- B. fill ---------- */
+  rFill() {
+    const mixes = K.mixes();
+    const srcSeg = `<div class="seg"><button class="${this.src === 'mix' ? 'on' : ''}" onclick="bat.src='mix';Router.render(true)">من خلطة</button><button class="${this.src === 'oil' ? 'on' : ''}" onclick="bat.src='oil';Router.render(true)">زيت مباشر</button></div>`;
+    let head = '';
+    if (this.src === 'mix') {
+      if (!mixes.length) return srcSeg + '<div class="note warn">مفيش خلطات في المخزون. اعمل «خلطة للتعتيق» الأول، أو عبّي من «زيت مباشر».</div>';
+      const m = mixes.find(x => x.code === this.mix);
+      head = `<div class="card"><b class="gold">اختار الخلطة</b><div class="list">${mixes.map(x => `<button class="li" style="${x.code === this.mix ? 'background:var(--goldbg)' : ''}" onclick="bat.mix='${x.code}';bat.fid='${x.fid}';Router.render(true)"><b>${esc(K.fname(x.fid))} ${pct(x.conc)}</b><span>${r0(x.left)} مل · ${x.ready && x.ready > ymd() ? '<span class="org">جاهزة ' + dmy(x.ready) + '</span>' : '<span class="grn">جاهزة</span>'}</span></button>`).join('')}</div>
+        ${m && m.ready > ymd() ? `<div class="note warn sm">الخلطة دي لسه في التعتيق لحد ${dmy(m.ready)}</div>` : ''}</div>`;
+      if (!m) return srcSeg + head;
+    } else {
+      const f = this.fid && K.frag(this.fid);
+      if (!f) return srcSeg + this.oilPicker();
+      const lots = T('Oil_Purchases').filter(r => r.Fragrance_ID === this.fid && VALID(r));
+      head = `<div class="card"><div class="row"><b class="big sp">${esc(f.Name_AR)}</b><button class="chip" onclick="bat.fid=null;Router.render(true)">تغيير</button></div>
+        <div class="kv"><span>الزيت في المخزون</span><b>${r2(K.stock('OIL-' + this.fid))} جم</b></div>
+        ${field('من أنهي شراء (اللوت)', `<select onchange="bat.lot=this.value;Router.render(true)"><option value="">آخر سعر</option>${lots.map(l => opt(l.Purchase_ID, dmy(l.Date) + ' · ' + (l.Supplier || '—') + ' · ' + r2(num(l.Price_per_unit)) + ' ج/جم', this.lot)).join('')}</select>`)}
+        ${field('التركيز % (بالوزن)', `<input type="number" inputmode="decimal" value="${esc(this.conc)}" placeholder="${Math.round(this.c() * 100)}" oninput="bat.conc=this.value;bat.paintFill()">`)}</div>`;
+    }
+    return srcSeg + head + `
     <div class="card"><b class="gold">هتعبّي كام؟</b>${K.sizes().map(v => `<div class="row"><span style="width:60px"><b>${v}</b> مل</span><span class="mut sm sp">زجاج ${esc((get('Size_Defaults', 'Size_ml', v) || {}).Default_Glass_Item_ID || '')} · مخزون ${r0(K.stock((get('Size_Defaults', 'Size_ml', v) || {}).Default_Glass_Item_ID))}</span>
       <span class="qty"><button class="qb" onclick="bat.q2(${v},1)">+</button><span>${this.plan[v] || 0}</span><button class="qb" onclick="bat.q2(${v},-1)">−</button></span></div>`).join('')}</div>
     <div class="card" id="bat_calc"></div>
-    <div class="card"><div class="grid3">${field('زيت فعلي جم', `<input type="number" inputmode="decimal" value="${esc(this.oilAct)}" oninput="bat.oilAct=this.value">`)}${field('كحول فعلي جم', `<input type="number" inputmode="decimal" value="${esc(this.alcAct)}" oninput="bat.alcAct=this.value">`)}${field('هالك جم', `<input type="number" inputmode="decimal" value="${esc(this.waste)}" oninput="bat.waste=this.value">`)}</div>
-      <div class="grid2">${field('أيام التعتيق', `<input type="number" value="${this.days}" oninput="bat.days=this.value">`)}<label class="row sm" style="margin-top:22px"><input type="checkbox" style="width:22px;height:22px" ${this.logo ? 'checked' : ''} onchange="bat.logo=this.checked"> حطيت اللوجو</label></div>
+    <div class="card"><div class="grid2">${field('التاريخ', `<input type="date" value="${this.date}" onchange="bat.date=this.value">`)}${field('هالك مل', `<input type="number" inputmode="decimal" value="${esc(this.waste)}" oninput="bat.waste=this.value">`)}</div>
+      ${this.src === 'oil' ? field('أيام التعتيق', `<input type="number" value="${this.days}" oninput="bat.days=this.value">`) : ''}
+      <label class="row sm"><input type="checkbox" style="width:22px;height:22px" ${this.logo ? 'checked' : ''} onchange="bat.logo=this.checked"> حطيت اللوجو (بيخصم من مخزون اللوجو)</label>
       ${field('ملاحظات', `<input value="${esc(this.notes)}" oninput="bat.notes=this.value">`)}</div>
-    <button class="btn" onclick="bat.save()">حفظ التشغيلة</button>`;
+    <button class="btn" onclick="bat.saveFill()">حفظ التعبئة</button>`;
   },
-  after() { if (this.fid) this.paint(); },
+  after() { if (this.mode === 'mix' && this.fid) this.paintMix(); if (this.mode === 'fill') this.paintFill(); },
   q2(v, d) { this.plan[v] = Math.max(0, (this.plan[v] || 0) + d); Router.render(true); },
-  paint() {
-    const el = $('#bat_calc'); if (!el) return; const x = this.calcs();
-    if (!x.pcs) { el.innerHTML = '<div class="mut">زوّد الكميات فوق</div>'; return; }
+  fillCalc() {
+    let ml = 0, pcs = 0; const need = {};
+    for (const [v, n] of Object.entries(this.plan)) { if (!(n > 0)) continue; ml += v * n; pcs += n; const g = (get('Size_Defaults', 'Size_ml', v) || {}).Default_Glass_Item_ID; if (g) need[g] = (need[g] || 0) + n; }
+    const x = { ml, pcs, need, wasteMl: num(this.waste) || 0 };
+    if (this.src === 'mix') { const m = K.mixes().find(y => y.code === this.mix); if (!m) return null; Object.assign(x, { m, c: m.conc, perMl: m.perMl, useMl: ml + x.wasteMl, have: m.left }); }
+    else { const c = this.c(), { og, al } = K.mix(c), p = this.lotPrice(); const use = ml + x.wasteMl; Object.assign(x, { c, og, al, p, oil: use * og, alcMl: use * al, perMl: og * p + al / 1000 * (C('Alcohol_Price') || 160), useMl: use, have: K.stock('OIL-' + this.fid) }); }
+    return x;
+  },
+  paintFill() {
+    const el = $('#bat_calc'); if (!el) return; const x = this.fillCalc();
+    if (!x || !x.pcs) { el.innerHTML = '<div class="mut">زوّد الكميات فوق</div>'; return; }
     const warn = [];
-    if (x.oil > K.stock('OIL-' + this.fid) + 0.001) warn.push('الزيت مش كفاية (محتاج ' + r2(x.oil) + ' جم)');
-    if (x.alcMl / 1000 > K.stock('AL-ETH96') + 0.0001) warn.push('الكحول مش كفاية');
+    if (this.src === 'mix' && x.useMl > x.have + 0.01) warn.push('الخلطة مش كفاية: محتاج ' + r0(x.useMl) + ' مل والموجود ' + r0(x.have) + ' مل');
+    if (this.src === 'oil') { if (x.oil > x.have + 0.001) warn.push('الزيت مش كفاية: محتاج ' + r2(x.oil) + ' جم والموجود ' + r2(x.have) + ' جم'); if (x.alcMl / 1000 > K.stock('AL-ETH96') + 0.0001) warn.push('الكحول مش كفاية'); }
     for (const [g, n] of Object.entries(x.need)) if (n > K.stock(g)) warn.push(K.itemName(g) + ': محتاج ' + n + ' والمخزون ' + r0(K.stock(g)));
     if (x.pcs / 72 > K.stock('LB-800837')) warn.push('الليبل مش كفاية');
-    const lot = get('Oil_Purchases', 'Purchase_ID', this.lot), p = lot ? num(lot.Price_per_unit) : K.costPrice(this.fid);
-    el.innerHTML = `<div class="grid3"><div><div class="mut sm">الإجمالي</div><b>${x.pcs} قطعة · ${r0(x.ml)} مل</b></div><div><div class="mut sm">زيت</div><b>${r2(x.oil)} جم</b></div><div><div class="mut sm">كحول</div><b>${r2(x.alcG)} جم = ${r2(x.alcMl)} مل</b></div></div>
-      <div class="mut sm">تكلفة القطعة (مرحلة أولى، ${r2(p)} ج/جم): ${Object.entries(this.plan).filter(([, n]) => n > 0).map(([v]) => v + ' مل = ' + r2(K.unitCost(+v, p, x.c))).join(' · ')}</div>
-      ${warn.length ? `<div class="note warn sm">${warn.map(esc).join('<br>')}</div>` : '<div class="note ok sm">المخزون يكفي ✓</div>'}`;
+    if (this.logo && x.pcs / 540 > K.stock('PR-LOGO')) warn.push('اللوجو مش في المخزون (شيل العلامة لو مش هتحطه)');
+    el.innerHTML = `<div class="grid3"><div><div class="mut sm">الإجمالي</div><b>${x.pcs} قطعة · ${r0(x.ml)} مل</b></div>
+      ${this.src === 'mix' ? `<div><div class="mut sm">من الخلطة</div><b>${r0(x.useMl)} مل</b><div class="mut sm">من ${r0(x.have)}</div></div><div><div class="mut sm">تركيز</div><b>${pct(x.c)}</b></div>`
+        : `<div><div class="mut sm">زيت</div><b>${r2(x.oil)} جم</b><div class="mut sm">من ${r2(x.have)}</div></div><div><div class="mut sm">كحول</div><b>${r0(x.alcMl)} مل</b></div>`}</div>
+      <div class="mut sm">تكلفة القطعة (مرحلة أولى): ${Object.entries(this.plan).filter(([, n]) => n > 0).map(([v]) => v + ' مل = ' + r2(K.unitCostLiquid(+v, x.perMl))).join(' · ')}</div>
+      ${warn.length ? `<div class="note bad sm">${warn.map(esc).join('<br>')}</div>` : '<div class="note ok sm">المخزون يكفي ✓</div>'}`;
   },
-  async save() {
-    const f = K.frag(this.fid), x = this.calcs(); if (!f || !x.pcs) return toast('اختار العطر والكميات');
-    const date = this.date, id = newId('PB', 'Production_Batches', date), lot = get('Oil_Purchases', 'Purchase_ID', this.lot);
-    const oil = num(this.oilAct) ?? Math.round(x.oil * 100) / 100, alcG = num(this.alcAct) ?? Math.round(x.alcG * 100) / 100;
-    const p = lot ? num(lot.Price_per_unit) : K.costPrice(this.fid);
-    add('Production_Batches', { Batch_ID: id, Date: date, Fragrance_ID: this.fid, Oil_Lot_Purchase_ID: this.lot || null, House: lot ? lot.House : null, Concentration: Math.round(x.c * 10000) / 10000, Oil_g: oil, Alcohol_g: alcG, Alcohol_ml: Math.round(alcG / (C('Alcohol_Density') || .808) * 100) / 100, Mix_Total_g: oil + alcG,
-      Output_Plan: Object.entries(this.plan).filter(([, n]) => n > 0).map(([v, n]) => n + '×' + v).join(' + ') + ' ml', Pieces_Filled: x.pcs, Waste_g: num(this.waste), Maceration_Start: date, Ready_Date: addDays(date, num(this.days) || 0), QC_Status: 'Pending', Record_Status: 'Valid', Notes: this.notes || null });
-    const mv = (code, type, mt, qty, unit, note) => add('Stock_Movements', { Move_ID: newId('SM', 'Stock_Movements', date), Date: date, Stock_Code: code, Stock_Type: type, Movement_Type: mt, Qty: Math.round(qty * 10000) / 10000, Unit: unit, Ref_Doc: id, Location: 'L01', Record_Status: 'Valid', Notes: note || null });
-    mv('OIL-' + this.fid, 'Oil', 'Production Out', -oil, 'g', f.Name_EN);
-    mv('AL-ETH96', 'Item', 'Production Out', -(alcG / (C('Alcohol_Density') || .808)) / 1000, 'L');
+  async saveFill() {
+    const x = this.fillCalc(); if (!x || !x.pcs) return toast('اختار المصدر والكميات');
+    const fid = this.src === 'mix' ? x.m.fid : this.fid, f = K.frag(fid); if (!f) return toast('اختار العطر');
+    const short = this.src === 'mix' ? x.useMl > x.have + 0.01 : x.oil > x.have + 0.001;
+    if (short && !(await ask('الكمية المطلوبة أكتر من اللي في المخزون. أسجل برضه؟'))) return;
+    const date = this.date, id = newId('PB', 'Production_Batches', date), ad = C('Alcohol_Density') || .808;
+    const og = K.mix(x.c).og, al = K.mix(x.c).al, oilG = Math.round(x.useMl * og * 100) / 100, alcG = Math.round(x.useMl * al * ad * 100) / 100;
+    const lot = this.src === 'oil' ? get('Oil_Purchases', 'Purchase_ID', this.lot) : null;
+    add('Production_Batches', { Batch_ID: id, Date: date, Fragrance_ID: fid, Oil_Lot_Purchase_ID: this.src === 'mix' ? (x.m.batch.Oil_Lot_Purchase_ID || null) : (this.lot || null), House: this.src === 'mix' ? x.m.batch.House : (lot ? lot.House : null), Concentration: Math.round(x.c * 10000) / 10000, Oil_g: oilG, Alcohol_g: alcG, Alcohol_ml: Math.round(alcG / ad * 100) / 100, Mix_Total_g: oilG + alcG,
+      Output_Plan: Object.entries(this.plan).filter(([, n]) => n > 0).map(([v, n]) => n + '×' + v).join(' + ') + ' ml' + (this.src === 'mix' ? ' from ' + x.m.code : ''), Pieces_Filled: x.pcs, Waste_g: x.wasteMl ? Math.round(x.wasteMl * (oilG + alcG) / x.useMl * 100) / 100 : null,
+      Maceration_Start: this.src === 'mix' ? x.m.batch.Maceration_Start || x.m.batch.Date : date, Ready_Date: this.src === 'mix' ? x.m.ready : addDays(date, num(this.days) || 0), QC_Status: 'Pending', Record_Status: 'Valid', Notes: this.notes || (this.src === 'mix' ? 'Filled from ' + x.m.code : null) });
+    const mv = (c, type, mt, qty, unit, note) => add('Stock_Movements', { Move_ID: newId('SM', 'Stock_Movements', date), Date: date, Stock_Code: c, Stock_Type: type, Movement_Type: mt, Qty: Math.round(qty * 10000) / 10000, Unit: unit, Ref_Doc: id, Location: 'L01', Record_Status: 'Valid', Notes: note || null });
+    if (this.src === 'mix') mv(x.m.code, 'Mix', 'Production Out', -x.useMl, 'ml', f.Name_EN);
+    else { mv('OIL-' + fid, 'Oil', 'Production Out', -oilG, 'g', f.Name_EN); mv('AL-ETH96', 'Item', 'Production Out', -(alcG / ad) / 1000, 'L'); }
     for (const [g, n] of Object.entries(x.need)) mv(g, 'Item', 'Production Out', -n, 'piece');
     mv('LB-800837', 'Item', 'Production Out', -x.pcs / 72, 'sheet', x.pcs + ' labels');
     if (this.logo) mv('PR-LOGO', 'Item', 'Production Out', -x.pcs / 540, 'sheet', x.pcs + ' logos');
     for (const [v, n] of Object.entries(this.plan)) {
-      if (!(n > 0)) continue; const sku = K.sku(this.fid, +v);
-      if (!K.product(sku)) add('Products', { SKU: sku, Fragrance_ID: this.fid, Size_ml: +v, Product_Name_AR: K.fname(this.fid) + ' ' + v + ' مل', Glass_Item_ID: (get('Size_Defaults', 'Size_ml', v) || {}).Default_Glass_Item_ID, Concentration: num(this.conc) ? x.c : null, Stage: 'Testing', Status: 'Active', Notes: 'Created by batch ' + id });
-      add('Batch_Outputs', { Output_ID: newId('BO', 'Batch_Outputs', date), Batch_ID: id, SKU: sku, Qty: n, Unit_Cost_Stage1: Math.round(K.unitCost(+v, p, x.c) * 100) / 100, Record_Status: 'Valid' });
+      if (!(n > 0)) continue; const sku = K.sku(fid, +v);
+      if (!K.product(sku)) add('Products', { SKU: sku, Fragrance_ID: fid, Size_ml: +v, Product_Name_AR: K.fname(fid) + ' ' + v + ' مل', Glass_Item_ID: (get('Size_Defaults', 'Size_ml', v) || {}).Default_Glass_Item_ID, Concentration: Math.round(x.c * 10000) / 10000, Stage: 'Testing', Status: 'Active', Notes: 'Created by batch ' + id });
+      add('Batch_Outputs', { Output_ID: newId('BO', 'Batch_Outputs', date), Batch_ID: id, SKU: sku, Qty: n, Unit_Cost_Stage1: Math.round(K.unitCostLiquid(+v, x.perMl) * 100) / 100, Record_Status: 'Valid' });
       mv(sku, 'Product', 'Production In', n, 'piece');
     }
-    await commit('اتسجلت التشغيلة ✓ — جاهزة ' + dmy(addDays(date, num(this.days) || 0)));
-    this.init({}); Router.render(true);
+    await commit('اتسجلت التعبئة ✓ — ' + x.pcs + ' قطعة دخلت المخزون');
+    const keepMix = this.src === 'mix' ? this.mix : ''; this.init({}); this.mode = 'fill'; this.src = keepMix ? 'mix' : 'oil'; this.mix = keepMix; Router.render(true);
   }
 };
 
 /* ================= 9. Stock ================= */
 const stk = SCREENS.stock = {
-  title: 'المخزون', sub: () => 'محسوب من حركات المخزون (Valid + Edited)',
-  init() { this.t = this.t || 'Product'; this.q = ''; this.adj = null; },
+  title: 'المخزون', sub: () => 'محسوب من حركات المخزون',
+  init() { this.t = this.t || 'Product'; this.q = ''; this.code = ''; this.kind = 'count'; this.qty = ''; this.why = ''; },
+  units: { piece: 'قطعة', g: 'جم', L: 'لتر', sheet: 'شيت', roll: 'رول', ml: 'مل' },
   render() {
-    const tabs = [['Product', 'منتجات'], ['Oil', 'زيوت'], ['Item', 'مستلزمات']];
+    const tabs = [['Product', 'منتجات'], ['Mix', 'خلطات'], ['Oil', 'زيوت'], ['Item', 'مستلزمات']];
+    const s = this.code ? (K.stockAll().find(x => x.code === this.code) || { code: this.code, qty: 0, unit: this.unitFor(this.code) }) : null;
     return `<div class="seg">${tabs.map(([k, l]) => `<button class="${this.t === k ? 'on' : ''}" onclick="stk.t='${k}';Router.render(true)">${l}</button>`).join('')}</div>
       <div class="search">${ICON.search}<input value="${esc(this.q)}" placeholder="بحث" oninput="stk.q=this.value;stk.paint()"></div><div id="stk_list" class="card"></div>
-      <details class="card"><summary>تسوية مخزون (جرد)</summary>
-        ${field('الكود', `<input id="adj_code" list="codes" placeholder="مثلاً K-F111-005 أو GL-T05-R أو OIL-F111"><datalist id="codes">${K.stockAll().map(s => `<option value="${esc(s.code)}">${esc(K.stockName(s.code))}</option>`).join('')}${T('Items').map(i => `<option value="${esc(i.Item_ID)}">${esc(i.Name_AR)}</option>`).join('')}</datalist>`)}
-        <div class="grid2">${field('الكمية (+ زيادة / − نقص)', '<input id="adj_qty" type="number" inputmode="decimal">')}${field('السبب', '<input id="adj_why" placeholder="جرد / كسر / عينة">')}</div>
-        <button class="btn sm" onclick="stk.adjust()">تسجيل التسوية</button></details>`;
+      <div class="card" id="adj"><b class="gold">زيادة / عجز / جرد</b>
+        ${s ? `<div class="row"><b class="sp">${esc(K.stockName(s.code))}</b><span class="mut sm ltr">${esc(s.code)}</span><button class="chip" onclick="stk.code='';Router.render(true)">تغيير</button></div>
+          <div class="kv"><span>الرصيد في البرنامج</span><b>${r2(s.qty)} ${esc(this.units[s.unit] || s.unit || '')}</b></div>
+          <div class="seg">${[['count', 'جرد (العدد الفعلي)'], ['plus', 'زيادة'], ['minus', 'عجز']].map(([k, l]) => `<button class="${this.kind === k ? 'on' : ''}" onclick="stk.kind='${k}';Router.render(true)">${l}</button>`).join('')}</div>
+          <div class="grid2">${field(this.kind === 'count' ? 'العدد الفعلي اللي عندك' : 'الكمية', `<input type="number" inputmode="decimal" value="${esc(this.qty)}" oninput="stk.qty=this.value;stk.paintDiff()">`)}${field('السبب', `<input value="${esc(this.why)}" placeholder="${this.kind === 'minus' ? 'كسر / عينة / تبخر' : 'جرد'}" oninput="stk.why=this.value">`)}</div>
+          <div id="adj_diff" class="sm"></div><button class="btn" onclick="stk.adjust()">تسجيل</button>`
+        : `<div class="mut sm">اضغط على أي صنف في القايمة فوق، أو اختار من هنا:</div><select onchange="stk.code=this.value;Router.render(true);document.getElementById('adj').scrollIntoView()"><option value="">اختار صنف…</option>
+          ${K.stockAll().map(x => opt(x.code, K.stockName(x.code) + ' (' + r2(x.qty) + ')', '')).join('')}${T('Items').filter(i => !K.stockAll().some(x => x.code === i.Item_ID)).map(i => opt(i.Item_ID, i.Name_AR + ' (0)', '')).join('')}</select>`}
+      </div>`;
   },
-  after() { this.paint(); },
+  unitFor(code) { const ex = K.stockAll().find(s => s.code === code); if (ex) return ex.unit; if (code.startsWith('OIL-')) return 'g'; if (code.startsWith('MIX-')) return 'ml'; if (K.product(code)) return 'piece'; const it = K.item(code); return stockUnit(it, it && it.Unit) || 'piece'; },
+  after() { this.paint(); this.paintDiff(); },
   paint() {
     const n = norm(this.q);
     const xs = K.stockAll().filter(s => s.type === this.t).map(s => Object.assign(s, { name: K.stockName(s.code) })).filter(s => !n || norm(s.name + ' ' + s.code).includes(n)).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
     const el = $('#stk_list'); if (!el) return;
-    el.innerHTML = xs.map(s => { const it = K.item(s.code), low = it && num(it.Reorder_Point) != null && s.qty <= num(it.Reorder_Point); return `<div class="kv"><span>${esc(s.name)} <span class="mut sm ltr">${esc(s.code)}</span></span><b class="${s.qty < 0 ? 'red' : low ? 'org' : ''}">${r2(s.qty)} ${esc({ piece: 'قطعة', g: 'جم', L: 'لتر', sheet: 'شيت', roll: 'رول' }[s.unit] || s.unit || '')}</b></div>`; }).join('') || '<div class="empty">مفيش</div>';
+    el.innerHTML = xs.map(s => { const it = K.item(s.code), low = it && num(it.Reorder_Point) != null && s.qty <= num(it.Reorder_Point); return `<button class="kv" style="all:unset;cursor:pointer;display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line2)" onclick="stk.code='${s.code}';stk.qty='';Router.render(true);document.getElementById('adj').scrollIntoView()"><span>${esc(s.name)} <span class="mut sm ltr">${esc(s.code)}</span></span><b class="${s.qty < 0 ? 'red' : low ? 'org' : ''}">${r2(s.qty)} ${esc(this.units[s.unit] || s.unit || '')}</b></button>`; }).join('') || '<div class="empty">مفيش</div>';
   },
+  delta() { const q = num(this.qty); if (q == null) return null; if (this.kind === 'plus') return Math.abs(q); if (this.kind === 'minus') return -Math.abs(q); return q - K.stock(this.code); },
+  paintDiff() { const el = $('#adj_diff'); if (!el) return; const d = this.delta(); el.innerHTML = d == null ? '' : d === 0 ? '<span class="grn">مطابق — مفيش فرق</span>' : `هيتسجل <b class="${d > 0 ? 'grn' : 'red'}">${d > 0 ? 'زيادة +' : 'عجز '}${r2(d)}</b>`; },
   async adjust() {
-    const code = $('#adj_code').value.trim(), q = num($('#adj_qty').value); if (!code || !q) return toast('اكتب الكود والكمية');
-    const type = code.startsWith('OIL-') ? 'Oil' : (K.product(code) || code.startsWith('K-') ? 'Product' : 'Item');
-    const ex = K.stockAll().find(s => s.code === code), it = K.item(code);
-    add('Stock_Movements', { Move_ID: newId('SM', 'Stock_Movements'), Date: ymd(), Stock_Code: code, Stock_Type: type, Movement_Type: 'Adjustment', Qty: q, Unit: ex ? ex.unit : (type === 'Oil' ? 'g' : type === 'Product' ? 'piece' : stockUnit(it, it && it.Unit) || 'piece'), Ref_Doc: null, Location: 'L01', Record_Status: 'Valid', Notes: $('#adj_why').value || 'Adjustment' });
-    await commit('اتسجلت التسوية ✓'); Router.render(true);
+    const d = this.delta(); if (!this.code || d == null) return toast('اختار الصنف واكتب الكمية'); if (Math.abs(d) < 0.00001) return toast('مفيش فرق');
+    const code = this.code, type = code.startsWith('OIL-') ? 'Oil' : code.startsWith('MIX-') ? 'Mix' : (K.product(code) || code.startsWith('K-') ? 'Product' : 'Item');
+    add('Stock_Movements', { Move_ID: newId('SM', 'Stock_Movements'), Date: ymd(), Stock_Code: code, Stock_Type: type, Movement_Type: 'Adjustment', Qty: Math.round(d * 10000) / 10000, Unit: this.unitFor(code), Ref_Doc: null, Location: 'L01', Record_Status: 'Valid', Notes: (this.kind === 'count' ? 'جرد: العدد الفعلي ' + this.qty : this.kind === 'plus' ? 'زيادة' : 'عجز') + (this.why ? ' — ' + this.why : '') });
+    await commit((d > 0 ? 'اتسجلت زيادة ' : 'اتسجل عجز ') + r2(Math.abs(d)) + ' ✓'); this.code = ''; this.qty = ''; this.why = ''; Router.render(true);
   }
 };
 
@@ -1447,11 +1578,11 @@ const set = SCREENS.settings = {
   t_sync() {
     const c = this.cfg;
     return `<div class="card"><b class="gold">الجهاز ده</b>
-      <div class="grid2">${field('كود الجهاز', `<select onchange="set.cfg.device=this.value;set.cfg.orderStart=(+this.value.slice(1)-1)*500+1;Router.render(true)">${['W1', 'W2', 'W3', 'W4'].map(d => opt(d, d, c.device)).join('')}</select>`)}
+      <div class="grid2">${field('كود الجهاز', `<select onchange="set.cfg.device=this.value;set.cfg.orderStart=ORDER_START[this.value];Router.render(true)">${['W1', 'W2', 'W3', 'W4'].map(d => opt(d, d + ' — ' + { W1: 'موبايل 1', W2: 'موبايل 2', W3: 'لابتوب 1', W4: 'لابتوب 2' }[d], c.device)).join('')}</select>`)}
       ${field('اسم المستخدم', `<input value="${esc(c.user)}" oninput="set.cfg.user=this.value">`)}
-      ${field('ترقيم الأوردرات يبدأ من', `<input type="number" value="${c.orderStart}" oninput="set.cfg.orderStart=+this.value">`)}
+      ${field('ترقيم الأوردرات', `<input value="${pad(ORDER_START[c.device] || 1, 3)} – ${pad((ORDER_START[c.device] || 1) + 248, 3)}" disabled>`)}
       <label class="row sm" style="margin-top:22px"><input type="checkbox" style="width:22px;height:22px" ${c.auto ? 'checked' : ''} onchange="set.cfg.auto=this.checked"> مزامنة تلقائية</label></div>
-      <div class="mut sm">كل جهاز لازم ياخد كود مختلف. W1 بيرقّم من 001 لـ 499، وW2 من 501 لـ 999.</div></div>
+      <div class="mut sm">كل جهاز لازم ياخد كود مختلف: W1 موبايل وائل (001–249) · W2 الموبايل التاني (501–749) · W3 لابتوب 1 (251–499) · W4 لابتوب 2 (751–999).</div></div>
     <div class="card"><b class="gold">الربط بجوجل شيت</b>
       ${field('لينك الـ Web app (Apps Script)', `<input class="ltr" style="text-align:left" value="${esc(c.url)}" placeholder="https://script.google.com/macros/s/…/exec" oninput="set.cfg.url=this.value.trim()">`)}
       ${field('كلمة السر (نفس SECRET في الكود)', `<input type="password" value="${esc(c.key)}" oninput="set.cfg.key=this.value">`)}
@@ -1547,7 +1678,7 @@ function firstRun() {
   <div class="page">
     <div class="note info">البرنامج محتاج يتوصل بشيتات جوجل مرة واحدة علشان ينزّل البيانات. بعد كده يشتغل حتى من غير نت.</div>
     <div class="card">
-      ${field('كود الجهاز', `<select id="fr_dev">${['W1', 'W2', 'W3', 'W4'].map(d => opt(d, d, 'W1')).join('')}</select>`)}
+      ${field('كود الجهاز', `<select id="fr_dev">${['W1', 'W2', 'W3', 'W4'].map(d => opt(d, d + ' — ' + { W1: 'موبايل 1', W2: 'موبايل 2', W3: 'لابتوب 1', W4: 'لابتوب 2' }[d], 'W1')).join('')}</select>`)}
       ${field('اسمك', '<input id="fr_user" placeholder="وائل">')}
       ${field('لينك الـ Web app', '<input id="fr_url" class="ltr" style="text-align:left" placeholder="https://script.google.com/macros/s/…/exec">')}
       ${field('كلمة السر', '<input id="fr_key" type="password">')}
@@ -1558,7 +1689,7 @@ function firstRun() {
 }
 async function firstConnect() {
   const dev = $('#fr_dev').value;
-  S.cfg = Object.assign(S.cfg, { device: dev, user: $('#fr_user').value, url: $('#fr_url').value.trim(), key: $('#fr_key').value, orderStart: (+dev.slice(1) - 1) * 500 + 1 });
+  S.cfg = Object.assign(S.cfg, { device: dev, user: $('#fr_user').value, url: $('#fr_url').value.trim(), key: $('#fr_key').value, orderStart: ORDER_START[dev] });
   const m = $('#fr_msg'); m.textContent = 'بنزّل البيانات… (ممكن ياخد نص دقيقة)';
   try {
     const d = await Sync.call('GET', { action: 'pull' });
