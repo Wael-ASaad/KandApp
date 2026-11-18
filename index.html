@@ -139,7 +139,7 @@ const ASSETS={mono:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAAEECAYAAA
 const INVOICE_CSS="@page{size:A4;margin:12mm 12mm 14mm}\n.inv *{box-sizing:border-box}\n.inv{margin:0;font-family:Tajawal,sans-serif;color:#141414;font-size:10.5pt;line-height:1.45}\n.inv .gold{color:#A88434}\n.inv .head{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #141414;padding-bottom:10px}\n.inv .brand{display:flex;align-items:center;gap:10px}\n.inv .brand img{height:58px}\n.inv .brand .name{font-family:Cormorant,serif;font-size:22pt;font-weight:700;letter-spacing:2px;line-height:1}\n.inv .brand .slogan{font-size:9.5pt;color:#555}\n.inv .doc{text-align:left}\n.inv .doc .t{font-size:20pt;font-weight:800}\n.inv .doc .t small{font-size:10pt;font-weight:400;color:#555;margin-right:6px}\n.inv .meta{font-size:9.5pt;color:#333}\n.inv .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}\n.inv .box{border:1px solid #D8D2C4;border-radius:8px;padding:9px 11px}\n.inv .box h3{margin:0 0 6px;font-size:10.5pt;font-weight:800;color:#A88434}\n.inv .r{display:flex;gap:6px;font-size:9.8pt}\n.inv .r b{min-width:78px;color:#555;font-weight:700}\n.inv table{width:100%;border-collapse:collapse;margin-top:12px;font-size:10pt}\n.inv th{background:#141414;color:#F6F0E4;font-weight:700;padding:7px 6px;text-align:right}\n.inv td{padding:7px 6px;border-bottom:1px solid #E6E0D2}\n.inv td.n,.inv th.n{text-align:center;white-space:nowrap}\n.inv tr.gift td{color:#7A6A40;font-style:italic}\n.inv .totals{display:grid;grid-template-columns:1.25fr 1fr;gap:12px;margin-top:12px;align-items:start}\n.inv .sum{border:1px solid #D8D2C4;border-radius:8px;overflow:hidden}\n.inv .sum .l{display:flex;justify-content:space-between;padding:6px 11px;border-bottom:1px solid #EEE8DA}\n.inv .sum .l.tot{background:#F6F0E4;font-weight:800;font-size:11.5pt}\n.inv .sum .l.due{background:#141414;color:#F6F0E4;font-weight:800;font-size:11.5pt;white-space:nowrap}\n.inv .pay{font-size:9.3pt;color:#444;margin-top:4px}\n.inv .ref{border:1.5px dashed #A88434;border-radius:8px;padding:10px 11px;display:flex;gap:10px;align-items:center}\n.inv .ref img{width:74px;height:74px}\n.inv .ref .code{font-size:17pt;font-weight:800;letter-spacing:1px;direction:ltr;display:inline-block}\n.inv .small{font-size:8.8pt;color:#555}\n.inv .foot{margin-top:14px;border-top:1px solid #D8D2C4;padding-top:8px;display:flex;justify-content:space-between;font-size:9pt;color:#444}\n.inv .ltr{direction:ltr;unicode-bidi:embed;display:inline-block}\n.inv .note{margin-top:10px;font-size:9.3pt;background:#FBF8F1;border-radius:6px;padding:7px 10px}\n.inv{background:#fff;color:#141414;direction:rtl}";
 /* KandApp core — storage, data, IDs, sync, router, domain calculations */
 'use strict';
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => s == null ? '' : String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = v => { const n = parseFloat(String(v ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(',', '.')); return isNaN(n) ? null : n; };
@@ -151,7 +151,7 @@ const sgn = n => (n >= 0 ? '+' : '') + (n * 100).toFixed(0) + '%';
 const pad = (n, w = 2) => String(n).padStart(w, '0');
 const ymd = (d = new Date()) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const addDays = (s, k) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + k); return ymd(d); };
-const dmy = s => s ? String(s).slice(0, 10).split('-').reverse().join('-') : '';
+const dmy = s => s ? '\u2066' + String(s).slice(0, 10).split('-').reverse().join('-') + '\u2069' : '';   // LTR isolate so RTL text never flips the date
 const norm = s => String(s || '').toLowerCase().replace(/[أإآا]/g, 'ا').replace(/[ىي]/g, 'ي').replace(/ة/g, 'ه').replace(/[ً-ْ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 /** Google Sheets turns 01001234567 into the number 1001234567 — put the 0 back */
 const fixPhone = v => { if (v == null || v === '') return v; let s = String(v).trim(); if (/^\d+(\.0+)?$/.test(s)) s = s.replace(/\.0+$/, ''); if (/^1\d{9}$/.test(s)) s = '0' + s; return s; };
@@ -368,7 +368,7 @@ const ICON = {
 /* ---------------- router ---------------- */
 const SCREENS = {};
 const MENU = [
-  ['calc', '1', 'الحاسبة'], ['inquiry', '2', 'استعلام عن عطر'], ['record', '3', 'تسجيل سعر / شراء زيت'],
+  ['home', '0', 'الرئيسية'], ['calc', '1', 'الحاسبة'], ['inquiry', '2', 'استعلام عن عطر'], ['record', '3', 'تسجيل سعر / شراء زيت'],
   ['purchase', '5', 'شراء مستلزمات'], ['batch', '6', 'تشغيلة / تعبئة'],
   ['order', '7', 'أوردر جديد'], ['orders', '7.1', 'الأوردرات والفواتير'],
   ['customers', '8', 'العملاء'], ['stock', '9', 'المخزون'], ['expenses', '10', 'المصروفات'],
@@ -378,8 +378,8 @@ const Router = {
   cur: null, name: '', params: {},
   go(name, params = {}) { location.hash = '#' + name + (Object.keys(params).length ? '?' + new URLSearchParams(params) : ''); },
   parse() {
-    const h = location.hash.slice(1) || 'calc'; const [n, q] = h.split('?');
-    return { name: SCREENS[n] ? n : 'calc', params: Object.fromEntries(new URLSearchParams(q || '')) };
+    const h = location.hash.slice(1) || 'home'; const [n, q] = h.split('?');
+    return { name: SCREENS[n] ? n : 'home', params: Object.fromEntries(new URLSearchParams(q || '')) };
   },
   render(keepState) {
     const { name, params } = this.parse();
@@ -1014,12 +1014,12 @@ const ord = SCREENS.order = {
 /* ================= 7.1 Orders list & detail ================= */
 const Orders = SCREENS.orders = {
   title: 'الأوردرات والفواتير', sub: () => Orders.id ? '' : T('Orders').filter(o => o.Record_Status !== 'Example').length + ' أوردر',
-  init(p) { this.id = p.id || null; this.q = this.q || ''; this.f = this.f || 'open'; this.payAmt = ''; this.payMethod = 'Cash'; this.payRef = ''; this.ret = null; },
+  init(p) { this.id = p.id || null; this.q = this.q || ''; this.f = p.f || this.f || 'open'; this.st = p.st ? p.st.split(',') : null; this.payAmt = ''; this.payMethod = 'Cash'; this.payRef = ''; this.ret = null; },
   render() { return this.id ? this.detail() : this.list(); },
   list() {
     const fl = [['open', 'مفتوحة'], ['due', 'عليها فلوس'], ['all', 'الكل']];
     return `<div class="search">${ICON.search}<input value="${esc(this.q)}" placeholder="رقم الأوردر / الاسم / الموبايل" oninput="Orders.q=this.value;Orders.paintList()"></div>
-      <div class="seg">${fl.map(([k, l]) => `<button class="${this.f === k ? 'on' : ''}" onclick="Orders.f='${k}';Router.render(true)">${l}</button>`).join('')}</div>
+      ${this.st ? `<div class="row"><span class="badge">${this.st.map(s => esc(K.statusAR(s))).join(' + ')}${this.f === 'due' ? ' · عليها فلوس' : ''}</span><button class="chip" onclick="Router.go('orders')">كل الأوردرات</button></div>` : `<div class="seg">${fl.map(([k, l]) => `<button class="${this.f === k ? 'on' : ''}" onclick="Orders.f='${k}';Router.render(true)">${l}</button>`).join('')}</div>`}
       <div id="ord_list"></div><div class="fab"><button class="btn" onclick="Router.go('order')">+ أوردر جديد</button></div>`;
   },
   after() { if (!this.id) this.paintList(); },
@@ -1028,8 +1028,9 @@ const Orders = SCREENS.orders = {
     let xs = T('Orders').filter(o => o.Record_Status !== 'Cancelled');
     if (n) xs = xs.filter(o => norm([o.Order_Code, o.Customer_Name, o.Phone, o.WhatsApp].join(' ')).includes(n));
     xs = xs.map(o => ({ o, t: K.orderTotals(o) }));
-    if (this.f === 'open') xs = xs.filter(x => !['Delivered', 'Cancelled', 'Returned'].includes(x.o.Status) || x.t.rem > 0.009);
-    if (this.f === 'due') xs = xs.filter(x => x.t.rem > 0.009 && x.o.Status !== 'Cancelled');
+    if (this.st) xs = xs.filter(x => VALID(x.o) && this.st.includes(x.o.Status) && (this.f !== 'due' || x.t.rem > 0.009));
+    else if (this.f === 'open') xs = xs.filter(x => !['Delivered', 'Cancelled', 'Returned'].includes(x.o.Status) || x.t.rem > 0.009);
+    if (!this.st && this.f === 'due') xs = xs.filter(x => x.t.rem > 0.009 && x.o.Status !== 'Cancelled');
     xs.sort((a, b) => String(b.o.Order_Date).localeCompare(String(a.o.Order_Date)) || String(b.o.Order_Code).localeCompare(String(a.o.Order_Code)));
     $('#ord_list').innerHTML = xs.length ? xs.map(({ o, t }) => `<button class="card" style="all:unset;cursor:pointer;display:block;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px" onclick="Router.go('orders',{id:'${o.Order_ID}'})">
       <div class="row"><b class="ltr gold">${esc(o.Order_Code)}</b><span class="sp"></span>${Orders.badge(o.Status)}${o.Record_Status === 'Example' ? '<span class="badge m">مثال</span>' : ''}</div>
@@ -1305,7 +1306,8 @@ const pur = SCREENS.purchase = {
 const bat = SCREENS.batch = {
   title: 'تشغيلة / تعبئة', sub: () => bat.mode === 'mix' ? 'زيت مركز + كحول → خلطة بتتعتق في المخزون' : 'خلطة جاهزة أو زيت → عبوات في المخزون',
   init(p) {
-    Object.assign(this, { mode: this.mode || 'mix', fid: p.fid || null, q: '', open: !p.fid, allF: false, lot: '', conc: '', ml: '', oilIn: '', plan: {}, src: 'mix', mix: '',
+    const pm = p.mix ? K.mixes(false).find(m => m.code === p.mix) : null;
+    Object.assign(this, { mode: p.mode || this.mode || 'mix', fid: p.fid || (pm && pm.fid) || null, q: '', open: !p.fid, allF: false, lot: '', conc: '', ml: '', oilIn: '', plan: {}, src: 'mix', mix: p.mix || '',
       oilAct: '', alcAct: '', waste: '', days: 14, logo: K.stock('PR-LOGO') > 0, notes: '', date: ymd() });
   },
   pick(fid) { this.fid = fid; this.q = ''; this.open = false; this.lot = ''; Router.render(true); },
@@ -1655,6 +1657,45 @@ const set = SCREENS.settings = {
       <div class="mut sm">باقي البيانات الأساسية (العطور، الأصناف، المنتجات والكيتات، المناطق والمحافظات، النقاط…) بتتعدل من الشيت مباشرة، والبرنامج بياخدها مع المزامنة.</div></div>`;
   },
   async saveBiz(i) { const r = T('Business_Info')[i]; upd('Business_Info', r.Key, { Value: $('#bi' + i).value }, 'Edited in app'); await commit('اتحفظ'); }
+};
+
+/* ================= 0. Home: alerts + quick buttons (read-only) ================= */
+const home = SCREENS.home = {
+  title: 'الرئيسية', sub: () => new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' }),
+  alerts() {
+    const A = [], today = ymd();
+    const os = T('Orders').filter(o => VALID(o)).map(o => ({ o, t: K.orderTotals(o) }));
+    const cnt = st => os.filter(x => st.includes(x.o.Status));
+    const n1 = cnt(['New', 'Confirmed']), n2 = cnt(['Prepared']), n3 = cnt(['Shipped']);
+    if (n1.length) A.push(['o', `${n1.length} أوردر مستني يتجهز`, n1.map(x => x.o.Order_Code).slice(0, 4).join(' · '), "Router.go('orders',{st:'New,Confirmed'})"]);
+    if (n2.length) A.push(['o', `${n2.length} أوردر متجهز ومستني يتشحن`, n2.map(x => x.o.Order_Code).slice(0, 4).join(' · '), "Router.go('orders',{st:'Prepared'})"]);
+    if (n3.length) A.push(['', `${n3.length} أوردر مع شركة الشحن`, n3.map(x => x.o.Order_Code + (x.o.Tracking_No ? '' : ' (من غير رقم شحنة)')).slice(0, 4).join(' · '), "Router.go('orders',{st:'Shipped'})"]);
+    const due = os.filter(x => x.o.Status === 'Delivered' && x.t.rem > 0.009);
+    if (due.length) A.push(['r', `${due.length} أوردر اتسلم وفلوسه لسه ما اتحصلتش`, 'الإجمالي ' + money(due.reduce((a, x) => a + x.t.rem, 0)) + ' ج', "Router.go('orders',{st:'Delivered',f:'due'})"]);
+    for (const m of K.mixes()) {
+      if (!m.ready || m.ready <= today) A.push(['g', `خلطة ${K.fname(m.fid)} ${pct(m.conc)} خلصت تعتيق`, r0(m.left) + ' مل جاهزة للتعبئة', `Router.go('batch',{mode:'fill',mix:'${m.code}'})`]);
+      else A.push(['m', `خلطة ${K.fname(m.fid)} ${pct(m.conc)} في التعتيق`, r0(m.left) + ' مل · جاهزة ' + dmy(m.ready), "Router.go('batch',{mode:'fill'})"]);
+    }
+    const all = K.stockAll();
+    const neg = all.filter(s => s.qty < -0.0001);
+    if (neg.length) A.push(['r', `${neg.length} صنف رصيده بالسالب`, neg.slice(0, 3).map(s => K.stockName(s.code)).join(' · ') + ' — محتاج جرد أو تسجيل شراء', "stk.t='" + neg[0].type + "';Router.go('stock')"]);
+    const low = T('Items').filter(i => ACTIVE(i) && i.Stock_Tracked !== 'Not applicable' && num(i.Reorder_Point) != null).filter(i => all.some(s => s.code === i.Item_ID)).map(i => ({ i, q: K.stock(i.Item_ID) })).filter(x => x.q >= 0 && x.q <= num(x.i.Reorder_Point));
+    if (low.length) A.push(['o', `${low.length} صنف قرب يخلص`, low.slice(0, 4).map(x => x.i.Name_AR + ' (' + r0(x.q) + ')').join(' · '), "stk.t='Item';Router.go('stock')"]);
+    const oils = all.filter(s => s.type === 'Oil' && s.qty > 0 && s.qty < 5);
+    if (oils.length) A.push(['m', `${oils.length} زيت فاضل منه أقل من 5 جم`, oils.slice(0, 4).map(s => K.stockName(s.code).replace('زيت ', '') + ' (' + r2(s.qty) + ')').join(' · '), "stk.t='Oil';Router.go('stock')"]);
+    if (!S.preview && S.outbox.length) A.push([navigator.onLine ? 'o' : 'm', `${S.outbox.length} تسجيل لسه ما اتبعتش للشيت`, navigator.onLine ? (S.syncMsg || 'هيتبعت لوحده') : 'الجهاز أوفلاين — هيتبعت أول ما النت يرجع', "Router.go('settings')"]);
+    if (!S.preview && S.syncState === 'err' && !S.outbox.length) A.push(['r', 'المزامنة فيها مشكلة', S.syncMsg || '', "Router.go('settings')"]);
+    return A;
+  },
+  render() {
+    const A = this.alerts(), cls = { r: 'bad', o: 'warn', g: 'ok', m: 'info', '': 'info' };
+    const Q = [['order', 'أوردر جديد', '＋'], ['orders', 'الأوردرات', '☰'], ['calc', 'الحاسبة', '∑'], ['inquiry', 'استعلام عطر', '⌕'], ['record', 'سعر / شراء زيت', '◍'], ['purchase', 'شراء مستلزمات', '▣'],
+      ['batch', 'تشغيلة', '⚗'], ['stock', 'المخزون', '▤'], ['customers', 'العملاء', '☺'], ['expenses', 'مصروف', '−'], ['reports', 'التقارير', '▦'], ['settings', 'الإعدادات', '⚙']];
+    return `<div><div class="row" style="margin-bottom:8px"><b class="gold">التنبيهات</b><span class="sp"></span><span class="mut sm">${A.length || ''}</span></div>
+      ${A.length ? A.map(([c, t, d, go]) => `<button class="note ${cls[c]}" style="cursor:pointer;font:inherit;text-align:right;width:100%;align-items:center;gap:10px;margin-bottom:8px;padding:11px 12px" onclick="${go}"><div class="sp"><b style="font-size:14px">${esc(t)}</b>${d ? `<div class="sm" style="opacity:.85;margin-top:2px">${esc(d)}</div>` : ''}</div><span style="opacity:.6">${ICON.back.replace('M9 6l6 6-6 6', 'M15 6l-6 6 6 6')}</span></button>`).join('')
+        : '<div class="note ok">كله تمام — مفيش حاجة مستنياك ✓</div>'}</div>
+    <div><b class="gold">شاشات سريعة</b><div class="grid3" style="margin-top:8px">${Q.map(([k, l, i]) => `<button class="card" style="all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:16px;min-height:82px;text-align:center;padding:8px;box-sizing:border-box" onclick="Router.go('${k}')"><span style="font-size:22px;color:var(--gold)">${i}</span><span style="font-size:13px;font-weight:700">${l}</span></button>`).join('')}</div></div>`;
+  }
 };
 
 /* Boot: load local data → seed (preview) → first-run setup; service worker */
